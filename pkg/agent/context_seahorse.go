@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/logger"
@@ -20,6 +21,10 @@ import (
 type seahorseContextManager struct {
 	engine   *seahorse.Engine
 	sessions session.SessionStore // for startup bootstrap
+}
+
+func (m *seahorseContextManager) Close() error {
+	return m.engine.Close()
 }
 
 // newSeahorseContextManager creates a seahorse-backed ContextManager.
@@ -58,7 +63,10 @@ func newSeahorseContextManager(_ json.RawMessage, al *AgentLoop) (ContextManager
 	if agent.Sessions != nil {
 		ctx := context.Background()
 		for _, sessionKey := range agent.Sessions.ListSessions() {
-			mgr.bootstrapSession(ctx, sessionKey)
+			if err := mgr.ReconcileSession(ctx, sessionKey); err != nil {
+				_ = engine.Close()
+				return nil, fmt.Errorf("seahorse: import existing session: %w", err)
+			}
 		}
 	}
 
@@ -81,6 +89,9 @@ func providerToCompleteFn(provider providers.LLMProvider, model string) seahorse
 		)
 		if err != nil {
 			return "", err
+		}
+		if resp == nil || strings.TrimSpace(resp.Content) == "" {
+			return "", fmt.Errorf("seahorse: provider returned an empty summary")
 		}
 		return resp.Content, nil
 	}
@@ -168,15 +179,23 @@ func (m *seahorseContextManager) Clear(ctx context.Context, sessionKey string) e
 	return nil
 }
 
-// bootstrapSession reconciles JSONL session history into seahorse SQLite.
-func (m *seahorseContextManager) bootstrapSession(ctx context.Context, sessionKey string) {
+// ReconcileSession imports the durable transcript before a new turn, including
+// delivered background results and messages whose previous ingestion failed.
+func (m *seahorseContextManager) ReconcileSession(ctx context.Context, sessionKey string) error {
 	if m.sessions == nil {
-		return
+		return nil
 	}
 
 	history := m.sessions.GetHistory(sessionKey)
+	if summary := strings.TrimSpace(m.sessions.GetSummary(sessionKey)); summary != "" {
+		// Legacy compaction already removed the source messages. Preserve the
+		// remaining checkpoint without pretending to recover the missing text.
+		history = append([]providers.Message{{
+			Role: "assistant", Content: "[Imported legacy conversation summary; original messages may be unavailable]\n" + summary,
+		}}, history...)
+	}
 	if len(history) == 0 {
-		return
+		return m.engine.ClearSession(ctx, sessionKey)
 	}
 
 	// Convert provider messages to seahorse messages
@@ -185,12 +204,7 @@ func (m *seahorseContextManager) bootstrapSession(ctx context.Context, sessionKe
 		msgs[i] = providerToSeahorseMessage(h)
 	}
 
-	if err := m.engine.Bootstrap(ctx, sessionKey, msgs); err != nil {
-		logger.WarnCF("seahorse", "bootstrap", map[string]any{
-			"session": sessionKey,
-			"error":   err.Error(),
-		})
-	}
+	return m.engine.Bootstrap(ctx, sessionKey, msgs)
 }
 
 // providerToSeahorseMessage converts a providers.Message to a seahorse.Message.

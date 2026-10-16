@@ -5,6 +5,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
@@ -101,6 +102,11 @@ func NewAgentLoop(
 
 	// Register shared tools to all agents (now that al is created)
 	registerSharedTools(al, cfg, msgBus, registry, provider)
+	if os.Getenv("PICOCLAW_CODEX_RUNNER_SOCKET") != "" {
+		for _, op := range []string{"start", "status", "cancel", "answer"} {
+			al.RegisterTool(tools.NewCodexRunnerTool(op))
+		}
+	}
 
 	return al
 }

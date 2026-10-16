@@ -1185,8 +1185,9 @@ func TestCronTool_ExecuteJobPublishesAgentResponse(t *testing.T) {
 	if executor.lastChan != "telegram" || executor.lastChatID != "chat-1" {
 		t.Fatalf("executor target = %s/%s, want telegram/chat-1", executor.lastChan, executor.lastChatID)
 	}
-	if executor.lastPrompt != "send me a poem" {
-		t.Fatalf("prompt = %q, want original message", executor.lastPrompt)
+	if !strings.HasSuffix(executor.lastPrompt, "send me a poem") ||
+		!strings.Contains(executor.lastPrompt, "not a new scheduling request") {
+		t.Fatalf("prompt = %q, want execution instructions and original message", executor.lastPrompt)
 	}
 	if executor.publishedResp != "generated reply" {
 		t.Fatalf("published response = %q, want generated reply", executor.publishedResp)

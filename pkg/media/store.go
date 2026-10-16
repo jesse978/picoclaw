@@ -65,12 +65,13 @@ type pathRefState struct {
 
 // MediaCleanerConfig configures the background TTL cleanup.
 type MediaCleanerConfig struct {
+	StateDir string // Optional durable reference index, shared across service restarts.
 	Enabled  bool
 	MaxAge   time.Duration
 	Interval time.Duration
 }
 
-// FileMediaStore is a pure in-memory implementation of MediaStore.
+// FileMediaStore keeps references in memory and optionally persists their index.
 // Files are expected to already exist on disk (e.g. in /tmp/picoclaw_media/).
 type FileMediaStore struct {
 	mu          sync.RWMutex
@@ -101,7 +102,7 @@ func NewFileMediaStore() *FileMediaStore {
 
 // NewFileMediaStoreWithCleanup creates a FileMediaStore with TTL-based background cleanup.
 func NewFileMediaStoreWithCleanup(cfg MediaCleanerConfig) *FileMediaStore {
-	return &FileMediaStore{
+	s := &FileMediaStore{
 		refs:        make(map[string]mediaEntry),
 		scopeToRefs: make(map[string]map[string]struct{}),
 		refToScope:  make(map[string]string),
@@ -111,6 +112,8 @@ func NewFileMediaStoreWithCleanup(cfg MediaCleanerConfig) *FileMediaStore {
 		stop:        make(chan struct{}),
 		nowFunc:     time.Now,
 	}
+	s.restoreRefs()
+	return s
 }
 
 // Store registers a local file under the given scope. The file must exist.
@@ -124,8 +127,12 @@ func (s *FileMediaStore) Store(localPath string, meta MediaMeta, scope string) (
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	storedAt := s.nowFunc()
+	if err := s.persistRef(ref, localPath, scope, meta, storedAt); err != nil {
+		return "", fmt.Errorf("persist media reference: %w", err)
+	}
 
-	s.refs[ref] = mediaEntry{path: localPath, meta: meta, storedAt: s.nowFunc()}
+	s.refs[ref] = mediaEntry{path: localPath, meta: meta, storedAt: storedAt}
 	if s.scopeToRefs[scope] == nil {
 		s.scopeToRefs[scope] = make(map[string]struct{})
 	}
@@ -277,6 +284,11 @@ func normalizeCleanupPolicy(policy CleanupPolicy) CleanupPolicy {
 }
 
 func (s *FileMediaStore) releaseRefLocked(ref, fallbackPath string) (string, bool) {
+	if s.cleanerCfg.StateDir != "" {
+		if err := os.Remove(s.refPath(ref)); err != nil && !os.IsNotExist(err) {
+			logger.WarnCF("media", "Cannot remove persisted reference", map[string]any{"error": err.Error()})
+		}
+	}
 	path := fallbackPath
 	if storedPath, ok := s.refToPath[ref]; ok {
 		path = storedPath

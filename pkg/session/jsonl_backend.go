@@ -3,6 +3,7 @@ package session
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"strings"
 
@@ -164,6 +165,16 @@ func (b *JSONLBackend) SetHistory(key string, history []providers.Message) {
 	if err := b.store.SetHistory(context.Background(), key, history); err != nil {
 		log.Printf("session: set history: %v", err)
 	}
+}
+
+func (b *JSONLBackend) AddMessageOnce(key, eventID string, msg providers.Message) error {
+	store, ok := b.store.(interface {
+		AddMessageOnce(context.Context, string, string, providers.Message) error
+	})
+	if !ok {
+		return fmt.Errorf("session backend does not support durable event ingestion")
+	}
+	return store.AddMessageOnce(context.Background(), b.resolveSessionKey(key), eventID, msg)
 }
 
 func (b *JSONLBackend) TruncateHistory(key string, keepLast int) {

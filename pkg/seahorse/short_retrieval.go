@@ -44,6 +44,7 @@ func ParseLastDuration(s string) (time.Duration, error) {
 
 // GrepInput controls search across summaries and messages.
 type GrepInput struct {
+	ConversationID   int64      `json:"-"` // Set from trusted tool session context.
 	Pattern          string     `json:"pattern"`
 	Scope            string     `json:"scope,omitempty"` // "both" (default), "summary", or "message"
 	Role             string     `json:"role,omitempty"`  // "user", "assistant", or "" (all)
@@ -120,6 +121,7 @@ func (r *RetrievalEngine) Grep(ctx context.Context, input GrepInput) (*GrepResul
 	}
 
 	searchInput := SearchInput{
+		ConversationID:   input.ConversationID,
 		Pattern:          input.Pattern,
 		Mode:             mode,
 		Role:             input.Role,

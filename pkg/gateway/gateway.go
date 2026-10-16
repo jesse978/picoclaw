@@ -442,6 +442,7 @@ func setupAndStartServices(
 	fmt.Println("✓ Heartbeat service started")
 
 	runningServices.MediaStore = media.NewFileMediaStoreWithCleanup(media.MediaCleanerConfig{
+		StateDir: filepath.Join(cfg.WorkspacePath(), "state", "media-refs"),
 		Enabled:  cfg.Tools.MediaCleanup.Enabled,
 		MaxAge:   time.Duration(cfg.Tools.MediaCleanup.MaxAge) * time.Minute,
 		Interval: time.Duration(cfg.Tools.MediaCleanup.Interval) * time.Minute,
@@ -690,6 +691,7 @@ func restartServices(
 	fmt.Println("  ✓ Heartbeat service restarted")
 
 	runningServices.MediaStore = media.NewFileMediaStoreWithCleanup(media.MediaCleanerConfig{
+		StateDir: filepath.Join(cfg.WorkspacePath(), "state", "media-refs"),
 		Enabled:  cfg.Tools.MediaCleanup.Enabled,
 		MaxAge:   time.Duration(cfg.Tools.MediaCleanup.MaxAge) * time.Minute,
 		Interval: time.Duration(cfg.Tools.MediaCleanup.Interval) * time.Minute,

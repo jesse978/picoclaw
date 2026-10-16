@@ -86,6 +86,17 @@ func (t *ExpandTool) Execute(ctx context.Context, args map[string]any) *tools.To
 	if err != nil {
 		return tools.ErrorResult("Expand failed: " + err.Error())
 	}
+	if key := tools.ToolSessionKey(ctx); key != "" {
+		conv, err := t.engine.store.GetConversationBySessionKey(ctx, key)
+		if err != nil || conv == nil {
+			return tools.ErrorResult("No searchable history for the current conversation")
+		}
+		for _, msg := range result.Messages {
+			if msg.ConversationID != conv.ConversationID {
+				return tools.ErrorResult("Message does not belong to the current conversation")
+			}
+		}
+	}
 
 	// Build response with filtered parts
 	messages := make([]map[string]any, 0, len(result.Messages))

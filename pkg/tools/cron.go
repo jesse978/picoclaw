@@ -143,6 +143,11 @@ func (t *CronTool) Execute(ctx context.Context, args map[string]any) *ToolResult
 	if !ok {
 		return ErrorResult("action is required")
 	}
+	// A scheduled execution is not a fresh request to schedule another job.
+	// Enforce this at the tool boundary, independently of model compliance.
+	if strings.HasPrefix(ToolSessionKey(ctx), "agent:cron-") && action != "get" && action != "list" {
+		return ErrorResult("This is an executing scheduled task. Scheduling mutations are disabled here; execute the existing task without creating or changing schedules.")
+	}
 
 	switch action {
 	case "add":
@@ -646,7 +651,7 @@ func (t *CronTool) ExecuteJob(ctx context.Context, job *cron.CronJob) string {
 	// Call agent with the job message
 	response, err := t.executor.ProcessDirectWithChannel(
 		ctx,
-		job.Payload.Message,
+		"[Scheduled execution of job "+job.ID+"; this is not a new scheduling request. Do not create or change schedules. If no notification is needed, reply with exactly NO_REPLY.]\n\n"+job.Payload.Message,
 		sessionKey,
 		channel,
 		chatID,
@@ -655,7 +660,7 @@ func (t *CronTool) ExecuteJob(ctx context.Context, job *cron.CronJob) string {
 		return fmt.Sprintf("Error: %v", err)
 	}
 
-	if response != "" {
+	if response != "" && strings.TrimSpace(response) != "NO_REPLY" {
 		t.executor.PublishResponseIfNeeded(ctx, channel, chatID, sessionKey, response)
 	}
 	return "ok"

@@ -4,8 +4,10 @@ package agent
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
+	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/providers"
 )
@@ -20,6 +22,19 @@ func (p *Pipeline) SetupTurn(ctx context.Context, ts *turnState) (*turnExecution
 	var history []providers.Message
 	var summary string
 	if !ts.opts.NoHistory {
+		// Setup runs within the serialized turn, before the new user message is
+		// persisted, so external results cannot split an active tool-call chain.
+		if p.al != nil && ts.opts.Dispatch.InboundContext != nil {
+			msg := bus.NormalizeInboundMessage(bus.InboundMessage{Context: *ts.opts.Dispatch.InboundContext})
+			p.al.syncCodexNotificationHistory(ctx, ts.agent, msg, ts.sessionKey)
+		}
+		if reconciler, ok := p.ContextManager.(interface {
+			ReconcileSession(context.Context, string) error
+		}); ok {
+			if err := reconciler.ReconcileSession(ctx, ts.sessionKey); err != nil {
+				return nil, fmt.Errorf("reconcile conversation history: %w", err)
+			}
+		}
 		if resp, err := p.ContextManager.Assemble(ctx, &AssembleRequest{
 			SessionKey: ts.sessionKey,
 			Budget:     ts.agent.ContextWindow,
@@ -29,7 +44,12 @@ func (p *Pipeline) SetupTurn(ctx context.Context, ts *turnState) (*turnExecution
 			summary = resp.Summary
 		}
 	}
-	ts.captureRestorePoint(history, summary)
+	// Rollback must restore the full transcript, not the compressed model view.
+	if !ts.opts.NoHistory {
+		ts.captureRestorePoint(ts.agent.Sessions.GetHistory(ts.sessionKey), ts.agent.Sessions.GetSummary(ts.sessionKey))
+	} else {
+		ts.captureRestorePoint(history, summary)
+	}
 
 	contextualSkills := ts.activeSkills
 	if ts.agent.ContextBuilder != nil {

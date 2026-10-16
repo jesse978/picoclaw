@@ -1,0 +1,7 @@
+config.json
+*.sqlite3*
+*.sock
+*.lock
+__pycache__/
+logs/
+backups/

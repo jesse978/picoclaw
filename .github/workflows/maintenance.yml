@@ -1,0 +1,24 @@
+name: Maintenance regression
+
+on:
+  push:
+    branches: ["maintenance/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Conversation, media, runner bridge and cron tests
+        run: go test -p 1 ./pkg/memory ./pkg/session ./pkg/seahorse ./pkg/agent ./pkg/tools ./pkg/media ./pkg/gateway
+      - name: Persistent runner tests with fake CLI
+        working-directory: extras/codex-runner
+        run: python3 -m unittest test_runner test_conversation_repair

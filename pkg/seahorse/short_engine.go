@@ -364,30 +364,26 @@ func (e *Engine) CompactUntilUnder(ctx context.Context, sessionKey string, budge
 
 // initCompactionOnce lazily initializes the compaction engine.
 func (e *Engine) initCompactionOnce() {
+	e.compactionMu.Lock()
+	defer e.compactionMu.Unlock()
 	if e.compaction == nil {
-		e.compactionMu.Lock()
-		defer e.compactionMu.Unlock()
-		if e.compaction == nil {
-			shutdownCtx, shutdownCancel := context.WithCancel(context.Background())
-			e.compaction = &CompactionEngine{
-				store:          e.store,
-				config:         e.config,
-				complete:       e.complete,
-				shutdownCtx:    shutdownCtx,
-				shutdownCancel: shutdownCancel,
-			}
+		shutdownCtx, shutdownCancel := context.WithCancel(context.Background())
+		e.compaction = &CompactionEngine{
+			store:          e.store,
+			config:         e.config,
+			complete:       e.complete,
+			shutdownCtx:    shutdownCtx,
+			shutdownCancel: shutdownCancel,
 		}
 	}
 }
 
 // initAssemblerOnce lazily initializes the assembler.
 func (e *Engine) initAssemblerOnce() {
+	e.assemblerMu.Lock()
+	defer e.assemblerMu.Unlock()
 	if e.assembler == nil {
-		e.assemblerMu.Lock()
-		defer e.assemblerMu.Unlock()
-		if e.assembler == nil {
-			e.assembler = &Assembler{store: e.store, config: e.config}
-		}
+		e.assembler = &Assembler{store: e.store, config: e.config}
 	}
 }
 
@@ -431,7 +427,8 @@ func (e *Engine) Bootstrap(ctx context.Context, sessionKey string, messages []Me
 	}
 
 	// Get messages already in DB
-	dbMsgs, err := e.store.GetMessages(ctx, conv.ConversationID, len(messages), 0)
+	// Read one beyond the incoming prefix so a rolled-back tail is detected.
+	dbMsgs, err := e.store.GetMessages(ctx, conv.ConversationID, len(messages)+1, 0)
 	if err != nil {
 		return fmt.Errorf("bootstrap: get messages: %w", err)
 	}

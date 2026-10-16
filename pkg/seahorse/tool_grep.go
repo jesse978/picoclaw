@@ -131,6 +131,14 @@ func (t *GrepTool) Execute(ctx context.Context, args map[string]any) *tools.Tool
 	if allConv, ok := args["all_conversations"].(bool); ok {
 		input.AllConversations = allConv
 	}
+	if key := tools.ToolSessionKey(ctx); key != "" {
+		conv, err := t.engine.store.GetConversationBySessionKey(ctx, key)
+		if err != nil || conv == nil {
+			return tools.ErrorResult("No searchable history for the current conversation")
+		}
+		input.ConversationID = conv.ConversationID
+		input.AllConversations = false
+	}
 	if limit, ok := args["limit"].(float64); ok {
 		input.Limit = int(limit)
 	}

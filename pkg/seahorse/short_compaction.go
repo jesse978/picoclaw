@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/logger"
@@ -743,15 +744,33 @@ func (e *CompactionEngine) runCondensedLoop(ctx context.Context, convID int64) {
 
 // --- Helper functions ---
 
+// Keep role and tool evidence without teaching the model the internal
+// [tool_use: ...] serialization as a format for user-facing replies.
+func summaryMessageContent(m Message) string {
+	if len(m.Parts) == 0 {
+		return m.Content
+	}
+	var parts []string
+	for _, p := range m.Parts {
+		switch p.Type {
+		case "text":
+			parts = append(parts, p.Text)
+		case "tool_use":
+			parts = append(parts, fmt.Sprintf("Tool requested: %s; arguments: %s", p.Name, p.Arguments))
+		case "tool_result":
+			parts = append(parts, "Tool result: "+p.Text)
+		case "media":
+			parts = append(parts, "Attachment reference (contents not inferred): "+p.MediaURI)
+		}
+	}
+	return strings.Join(parts, "\n")
+}
+
 func formatMessagesForSummary(messages []Message) string {
 	var result string
 	for _, m := range messages {
 		ts := m.CreatedAt.Format("2006-01-02 15:04 MST")
-		content := m.Content
-		if content == "" && len(m.Parts) > 0 {
-			content = partsToReadableContent(m.Parts)
-		}
-		result += fmt.Sprintf("[%s]\n%s\n\n", ts, content)
+		result += fmt.Sprintf("[%s; role=%s]\n%s\n\n", ts, m.Role, summaryMessageContent(m))
 	}
 	return result
 }
@@ -782,6 +801,9 @@ Treat this as incremental memory compaction input, not a full-conversation summa
 
 Normal summary policy:
 - Preserve key decisions, rationale, constraints, and active tasks.
+- Preserve user corrections, exact task IDs, deadlines/timezones, and cancelled tasks.
+- Distinguish requests/plans from verified tool results, failures, and pending work.
+- Describe tool activity as past events in prose; never output mock tool calls.
 - Keep essential technical details needed to continue work safely.
 - Remove obvious repetition and conversational filler.
 
@@ -806,6 +828,8 @@ func buildCondensedSummaryPrompt(sourceText string, targetTokens int) string {
 	return fmt.Sprintf(`You condense multiple summaries into a single higher-level summary.
 Preserve all important decisions, constraints, and outcomes.
 Merge overlapping topics. Keep technical details intact.
+Preserve corrections, cancellations, exact task IDs and dates. Distinguish verified
+results from plans, failed attempts and pending work. Never output mock tool calls.
 
 Output requirements:
 - Plain text only.
@@ -828,6 +852,8 @@ Aggressive summary policy:
 - Keep only durable facts and current task state.
 - Remove examples, repetition, and low-value narrative details.
 - Preserve explicit TODOs, blockers, decisions, and constraints.
+- Preserve corrections, cancellations, exact IDs/dates and verified versus pending status.
+- Describe tools as past events in prose; never output mock tool calls.
 
 Output requirements:
 - Plain text only.
@@ -849,14 +875,10 @@ Output requirements:
 func truncateSummary(messages []Message) string {
 	content := ""
 	for _, m := range messages {
-		c := m.Content
-		if c == "" && len(m.Parts) > 0 {
-			c = partsToReadableContent(m.Parts)
-		}
-		content += c + "\n"
+		content += m.Role + ": " + summaryMessageContent(m) + "\n"
 	}
-	if len(content) > 2048 {
-		content = content[:2048]
+	if chars := []rune(content); len(chars) > 2048 {
+		content = string(chars[:2048])
 	}
 	content += fmt.Sprintf("\n[Truncated from %d messages]", len(messages))
 	return content
@@ -867,8 +889,8 @@ func truncateCondensedSummaries(summaries []Summary) string {
 	for _, s := range summaries {
 		content += s.Content + "\n"
 	}
-	if len(content) > 2048 {
-		content = content[:2048]
+	if chars := []rune(content); len(chars) > 2048 {
+		content = string(chars[:2048])
 	}
 	content += fmt.Sprintf("\n[Condensed from %d summaries]", len(summaries))
 	return content

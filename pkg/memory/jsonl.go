@@ -41,14 +41,15 @@ const (
 // Scope is stored as raw JSON so pkg/memory can stay decoupled from the
 // higher-level session package while still preserving structured scope data.
 type SessionMeta struct {
-	Key       string          `json:"key"`
-	Summary   string          `json:"summary"`
-	Skip      int             `json:"skip"`
-	Count     int             `json:"count"`
-	CreatedAt time.Time       `json:"created_at"`
-	UpdatedAt time.Time       `json:"updated_at"`
-	Scope     json.RawMessage `json:"scope,omitempty"`
-	Aliases   []string        `json:"aliases,omitempty"`
+	Key            string          `json:"key"`
+	Summary        string          `json:"summary"`
+	Skip           int             `json:"skip"`
+	Count          int             `json:"count"`
+	CreatedAt      time.Time       `json:"created_at"`
+	UpdatedAt      time.Time       `json:"updated_at"`
+	Scope          json.RawMessage `json:"scope,omitempty"`
+	Aliases        []string        `json:"aliases,omitempty"`
+	ExternalEvents map[string]bool `json:"external_events,omitempty"`
 }
 
 // JSONLStore implements Store using append-only JSONL files.
@@ -599,6 +600,10 @@ func (s *JSONLStore) addMsg(sessionKey string, msg providers.Message) error {
 	l.Lock()
 	defer l.Unlock()
 
+	return s.addMsgLocked(sessionKey, msg)
+}
+
+func (s *JSONLStore) addMsgLocked(sessionKey string, msg providers.Message) error {
 	now := time.Now()
 
 	if msg.CreatedAt == nil {

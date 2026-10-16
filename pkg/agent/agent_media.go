@@ -104,6 +104,7 @@ func resolveMediaRefs(
 					"ref":   ref,
 					"error": err.Error(),
 				})
+				msg.Content += "\n[Attachment unavailable: " + ref + ". Do not infer its contents; use previously verified notes or ask the user to resend it if needed.]"
 				continue
 			}
 
@@ -113,6 +114,7 @@ func resolveMediaRefs(
 					"path":  localPath,
 					"error": err.Error(),
 				})
+				msg.Content += "\n[Attachment file unavailable. Do not infer its contents; ask the user to resend it if needed.]"
 				continue
 			}
 
