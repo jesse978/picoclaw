@@ -18,7 +18,7 @@ jobs:
         with:
           go-version-file: go.mod
       - name: Conversation, media, runner bridge and cron tests
-        run: go test -p 1 ./pkg/memory ./pkg/session ./pkg/seahorse ./pkg/agent ./pkg/tools ./pkg/media ./pkg/gateway
+        run: go test -tags goolm,stdjson -p 1 ./pkg/memory ./pkg/session ./pkg/seahorse ./pkg/agent ./pkg/tools ./pkg/media ./pkg/gateway
       - name: Persistent runner tests with fake CLI
         working-directory: extras/codex-runner
         run: python3 -m unittest test_runner test_conversation_repair

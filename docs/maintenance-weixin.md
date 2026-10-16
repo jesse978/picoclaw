@@ -44,14 +44,15 @@
 ## 校验与构建
 
 ```sh
-go test -p 1 ./pkg/memory ./pkg/session ./pkg/seahorse ./pkg/agent ./pkg/tools ./pkg/media ./pkg/gateway
+go test -tags goolm,stdjson -p 1 ./pkg/memory ./pkg/session ./pkg/seahorse ./pkg/agent ./pkg/tools ./pkg/media ./pkg/gateway
 cd extras/codex-runner
 python3 -m unittest test_runner test_conversation_repair
 cd ../..
-go build -p 1 -trimpath -ldflags '-s -w' -o build/picoclaw ./cmd/picoclaw
+go build -tags goolm,stdjson -p 1 -trimpath -ldflags '-s -w' -o build/picoclaw ./cmd/picoclaw
 ```
 
 在内存较小的机器上使用 `GOMAXPROCS=2 GOMEMLIMIT=512MiB` 降低构建峰值。
+以上构建标签沿用官方 CI，避免依赖系统的 libolm 开发头文件。
 测试使用隔离目录和模拟 provider，不向真实微信会话发送测试消息。
 
 ## 后续同步
