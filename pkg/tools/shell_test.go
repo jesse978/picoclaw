@@ -709,11 +709,9 @@ func TestShellTool_URLsNotBlocked(t *testing.T) {
 	}
 
 	for _, cmd := range commands {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		result := tool.Execute(ctx, map[string]any{"action": "run", "command": cmd})
-		cancel()
-		if result.IsError && strings.Contains(result.ForLLM, "path outside working dir") {
-			t.Errorf("command with URL should not be blocked by workspace check: %s\n  error: %s", cmd, result.ForLLM)
+		result := tool.guardCommand(cmd, tmpDir)
+		if result != "" {
+			t.Errorf("command with URL should not be blocked by workspace check: %s\n  error: %s", cmd, result)
 		}
 	}
 }
@@ -736,8 +734,8 @@ func TestShellTool_FileURISandboxing(t *testing.T) {
 	}
 
 	for _, cmd := range blockedCommands {
-		result := tool.Execute(context.Background(), map[string]any{"action": "run", "command": cmd})
-		if !result.IsError || !strings.Contains(result.ForLLM, "path outside working dir") {
+		result := tool.guardCommand(cmd, tmpDir)
+		if !strings.Contains(result, "path outside working dir") {
 			t.Errorf("file:// URI outside workspace should be blocked: %s", cmd)
 		}
 	}
@@ -754,9 +752,9 @@ func TestShellTool_FileURISandboxing(t *testing.T) {
 	}
 
 	for _, cmd := range allowedCommands {
-		result := tool.Execute(context.Background(), map[string]any{"action": "run", "command": cmd})
-		if result.IsError && strings.Contains(result.ForLLM, "path outside working dir") {
-			t.Errorf("file:// URI inside workspace should be allowed: %s\n  error: %s", cmd, result.ForLLM)
+		result := tool.guardCommand(cmd, tmpDir)
+		if result != "" {
+			t.Errorf("file:// URI inside workspace should be allowed: %s\n  error: %s", cmd, result)
 		}
 	}
 }
@@ -780,9 +778,9 @@ func TestShellTool_URLBypassPrevented(t *testing.T) {
 	}
 
 	for _, cmd := range blockedCommands {
-		result := tool.Execute(context.Background(), map[string]any{"action": "run", "command": cmd})
-		if !result.IsError || !strings.Contains(result.ForLLM, "path outside working dir") {
-			t.Errorf("bypass attempt should be blocked: %q\n  got: %s", cmd, result.ForLLM)
+		result := tool.guardCommand(cmd, tmpDir)
+		if !strings.Contains(result, "path outside working dir") {
+			t.Errorf("bypass attempt should be blocked: %q\n  got: %s", cmd, result)
 		}
 	}
 }
@@ -1916,10 +1914,12 @@ func TestShellTool_SchemelessURLDetection(t *testing.T) {
 		"echo git://github.com",
 	}
 
+	// Other guards may still reject a command (for example the SSH deny rule).
+	// This test checks only URL/path classification, without executing anything.
 	for _, cmd := range allowedCommands {
-		result := tool.Execute(context.Background(), map[string]any{"action": "run", "command": cmd})
-		if result.IsError && strings.Contains(result.ForLLM, "path outside working dir") {
-			t.Errorf("command with recognized web scheme should not be blocked: %s\n  error: %s", cmd, result.ForLLM)
+		result := tool.guardCommand(cmd, tmpDir)
+		if strings.Contains(result, "path outside working dir") {
+			t.Errorf("command with recognized web scheme should not be blocked: %s\n  error: %s", cmd, result)
 		}
 	}
 
@@ -1930,9 +1930,9 @@ func TestShellTool_SchemelessURLDetection(t *testing.T) {
 	}
 
 	for _, cmd := range multiURLCommands {
-		result := tool.Execute(context.Background(), map[string]any{"action": "run", "command": cmd})
-		if result.IsError && strings.Contains(result.ForLLM, "path outside working dir") {
-			t.Errorf("command with multiple web URLs should not be blocked: %s\n  error: %s", cmd, result.ForLLM)
+		result := tool.guardCommand(cmd, tmpDir)
+		if strings.Contains(result, "path outside working dir") {
+			t.Errorf("command with multiple web URLs should not be blocked: %s\n  error: %s", cmd, result)
 		}
 	}
 }
