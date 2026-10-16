@@ -7269,6 +7269,10 @@ func TestParallelMessageProcessing_DifferentSessionsProcessedConcurrently(t *tes
 	turnCounter := 0
 	var wg sync.WaitGroup
 	wg.Add(3) // Wait for 3 turns to complete
+	started := make(chan struct{}, 3)
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	releaseAll := func() { releaseOnce.Do(func() { close(release) }) }
 
 	cfg := &config.Config{
 		Agents: config.AgentsConfig{
@@ -7301,8 +7305,10 @@ func TestParallelMessageProcessing_DifferentSessionsProcessedConcurrently(t *tes
 			}
 			mu.Unlock()
 
-			// Simulate some processing time
-			time.Sleep(100 * time.Millisecond)
+			// Keep calls overlapping until the test observes concurrency.
+			// A fixed sleep can finish before another worker is scheduled on CI.
+			started <- struct{}{}
+			<-release
 
 			mu.Lock()
 			delete(activeTurns, turnID)
@@ -7318,6 +7324,7 @@ func TestParallelMessageProcessing_DifferentSessionsProcessedConcurrently(t *tes
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	defer releaseAll()
 
 	// Start the agent loop
 	go func() {
@@ -7325,9 +7332,6 @@ func TestParallelMessageProcessing_DifferentSessionsProcessedConcurrently(t *tes
 			t.Logf("Agent loop error: %v", err)
 		}
 	}()
-
-	// Give the loop time to start
-	time.Sleep(50 * time.Millisecond)
 
 	// Send 3 messages from different sessions
 	sessions := []string{"user1", "user2", "user3"}
@@ -7348,6 +7352,16 @@ func TestParallelMessageProcessing_DifferentSessionsProcessedConcurrently(t *tes
 			t.Fatalf("PublishInbound failed: %v", err)
 		}
 	}
+
+	// Observe two in-flight provider calls before allowing either to finish.
+	for range 2 {
+		select {
+		case <-started:
+		case <-time.After(5 * time.Second):
+			t.Fatal("different sessions did not enter the provider concurrently")
+		}
+	}
+	releaseAll()
 
 	// Wait for all turns to complete with timeout
 	done := make(chan struct{})
